@@ -1,3 +1,8 @@
+#Ignore data, figs, docs
+data/
+figs/
+docs/
+
 # History files
 .Rhistory
 .Rapp.history
