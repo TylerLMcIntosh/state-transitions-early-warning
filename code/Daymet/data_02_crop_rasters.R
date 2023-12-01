@@ -5,7 +5,7 @@ taskID <- commandArgs(trailingOnly = TRUE)
 taskID <- as.numeric(taskID)
 print(taskID)
 
-# Input data: downloaded Daymet 1-km climate tif files for North America between 2008 and 2017 from the NASA's Earthdata website for
+# Input data: downloaded Daymet 1-km climate tif files for North America between 1985 and 2021 from the ORNL DAAC website for
 # all available climate variables (tmin, tmax, swe, prcp, vp)
 
 library(dplyr)

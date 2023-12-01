@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-# Input: downloaded Daymet 1-km climate tif files for North America from the NASA's Earthdata website for
+# Input: downloaded Daymet 1-km climate tif files for North America from the ORNL DAAC  website for
 # all available climate variables (tmin, tmax, swe, prcp, vp)
 
 # Output: CSV file of full file names, short file names, climate variable, and data year
