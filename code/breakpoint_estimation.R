@@ -8,28 +8,45 @@ library(sf)
 library(doParallel)
 library(EnvCpt)
 
-#Create data frame from LCMAP files
-directory <- #directory with LCMAP files
-files <- list.files(directory,
+
+LCMAP <- #directory with LCMAP files
+eco_shp <-  #directory with EPA_l4_SR
+
+files <- list.files(LCMAP,
                     full.names = T)
 
-get_n <- function(files){
+eco <- st_read(eco_shp)#read ecoregion boundaries
+trees <- raster(files[1])
+eco <- eco %>% 
+  st_transform(st_crs(trees))#use same crs as LCMAP
+eco <- eco %>% 
+  mutate(eco = as.numeric(as.factor(US_L4CODE)))
+eco_r <- fasterize::fasterize(eco, trees, field = 'eco', fun = 'first')#convert ecoregions to raster
+eco <- as.data.frame(eco_r)
+names(eco) <- 'eco'
+
+#Helper to create data frame with LLC area per ecoregion
+get_n <- function(files, eco){
   library(tidyverse)
   a_r <- raster::raster(files)
   a <- raster::as.data.frame(a_r, xy = T)
   names(a)[3] <- 'LC'
-  b <- a %>% 
-  group_by(LC) %>% 
-  summarize(area_km2 = n()* (30*30) / 1000000) %>% 
-  mutate(yr = as.numeric(str_split_fixed(basename(files[1]), '_', 6)[5]))
+  print('Created data frame')
+  combo <- cbind(eco, a)
+  b <- combo %>% 
+    group_by(eco, LC) %>% 
+    summarize(area_km2 = n()* (30*30) / 1000000) %>% #calculate area covered by trees in a given year
+    mutate(yr = as.numeric(str_split_fixed(basename(files[1]), '_', 6)[5]))
   return(b)
 }
 
-cl <- makeCluster(7)
-registerDoParallel(cl)
+# cl <- makeCluster(7)
+# registerDoParallel(cl)
 
-df <- foreach(i = 1:length(files), .combine = rbind) %dopar%
-  get_n(files[[i]])
+h <- foreach(i = 1:length(files), .combine = rbind) %do%
+  get_n(files[[i]], eco)
+
+
 
 df <- filter(df, LC %in% 4)#only keep rows with tree data
 
