@@ -7,8 +7,30 @@ library(foreach)
 library(sf)
 library(doParallel)
 library(EnvCpt)
-file <- #enter name of file with LCMAP data
-df <- read.csv(file)
+
+#Create data frame from LCMAP files
+directory <- #directory with LCMAP files
+files <- list.files(directory,
+                    full.names = T)
+
+get_n <- function(files){
+  library(tidyverse)
+  a_r <- raster::raster(files)
+  a <- raster::as.data.frame(a_r, xy = T)
+  names(a)[3] <- 'LC'
+  b <- a %>% 
+  group_by(LC) %>% 
+  summarize(area_km2 = n()* (30*30) / 1000000) %>% 
+  mutate(yr = as.numeric(str_split_fixed(basename(files[1]), '_', 6)[5]))
+  return(b)
+}
+
+cl <- makeCluster(7)
+registerDoParallel(cl)
+
+df <- foreach(i = 1:length(files), .combine = rbind) %dopar%
+  get_n(files[[i]])
+
 df <- filter(df, LC %in% 4)#only keep rows with tree data
 
 ggplot(filter(df)) +
