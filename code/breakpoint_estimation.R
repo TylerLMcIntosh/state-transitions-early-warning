@@ -48,7 +48,7 @@ h <- foreach(i = 1:length(files), .combine = rbind) %do%
 
 
 
-df <- filter(df, LC %in% 4)#only keep rows with tree data
+df <- filter(h, LC %in% 4)#only keep rows with tree data
 
 ggplot(filter(df)) +
   geom_line(aes(yr, area_km2)) +
