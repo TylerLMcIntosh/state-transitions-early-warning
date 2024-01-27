@@ -2,6 +2,7 @@
 data/
 figs/
 docs/
+Data/
 
 # History files
 .Rhistory
