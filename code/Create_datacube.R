@@ -14,9 +14,11 @@ wd = "E:/Twensday-03/LCMAP_raw"
 
 setwd(wd)
 
-LCMAP.files = list.files("E:/Twensday-03/LCMAP_raw", pattern = ".tif", recursive = TRUE, full.names = TRUE)
+LCMAP.files = list.files("E:/Twensday-03/LCMAP_raw", pattern = "LCMAP_CU_011011_", recursive = TRUE, full.names = TRUE)
+disturbnace_tiles = list.files("E:/Twensday-03/Disturbance_Stack/Disturbance_Stack/forest-disturbance-stack/western-conus", pattern = ".tif", recursive = TRUE, full.names = TRUE)
 
 head(LCMAP.files, 10)
+head(disturbnace_tiles, 10)
 
 sum(file.size(LCMAP.files)) /1000^3
 
@@ -29,7 +31,15 @@ my_collect = create_image_collection(LCMAP.files, date_time = get_year, band_nam
 my_collect
 
 
+get_year_d = as.Date(substr(basename(disturbnace_tiles), 40, 43), "%Y")
+fname_all_d = basename(tools::file_path_sans_ext(disturbnace_tiles))
+b_name_d = substr(fname_all_d, 8,18)
+my_collect2 = create_image_collection(disturbnace_tiles, date_time = get_year_d, band_names = b_name_d)
+my_collect2
+
+
 extent(my_collect, srs = "EPSG:4326")
+extent(my_collect2, srs = "EPSG:4326")
 
 ## create a cube with different spatial resolution and different space and time extent
 lcmap.overview.30m = cube_view(srs = "EPSG:3857", extent = my_collect, dx = 30, dy = 30, dt = "P1Y", resampling = "average"
@@ -135,4 +145,59 @@ x = raster_cube(my_collect, lcmap.cube.90m, mask=lcmap.clear_mask)
 # lcmap.cube.overview = raster_cube(my_collect, v.subarea.90m)
 # lcmap.cube.overview
 
+lcmap.cube.500m.SCTAB = select_bands(lcmap.cube.500m, c("SCSTAB"))
+
+# Apply a user defined R function
+lcmap.SCTAB.resid = apply_time(lcmap.cube.500m.SCTAB, names="SCTAB_residuals", 
+                           FUN=function(x) {
+                             y = x["SCTAB",]
+                             if (sum(is.finite(y)) < 3) {
+                               return(rep(NA,ncol(x)))
+                             }
+                             t = 1:ncol(x)
+                             return(predict(lm(y ~ t)) -  x["SCTAB",])
+                           })
+plot(lcmap.SCTAB.resid)
+
+
+##########Disturbnace cube#######
+
+dist.overview.500m = cube_view(srs = "EPSG:3857", extent = my_collect, dx = 500, dy = 500, dt = "P1Y", resampling = "average"
+                                , aggregation = "median")
+
+dist.overview.500m
+
+dist.cube.500m = raster_cube(my_collect2, dist.overview.500m)
+dist.cube.500m
+
+dist.cube.500m.sd = reduce_time(dist.cube.500m, names=c("sd_disturbnace"), "sd(disturbance)")
+#plot(dist.cube.500m.sd)
+dist.cube.500m.var = reduce_time(dist.cube.500m, names=c("var_disturbnace"), "var(disturbance)")
+plot(dist.cube.500m.var)
+
+dist.cube.500m.count = reduce_time(dist.cube.500m, names=c("count_disturbnace"), "count(disturbance)")
+plot(dist.cube.500m.count)
+
+dist.cube.500m.max = reduce_time(dist.cube.500m, names=c("Q1_disturbnace"), "max(disturbance)")
+plot(dist.cube.500m.max)
+
+
+
+write_tif(
+  dist.cube.500m.sd,
+  dir = wd,
+  prefix = basename(tempfile(pattern = "dist_cube_sd_500")),
+  overviews = FALSE,
+  COG = FALSE,
+  rsmpl_overview = "nearest",
+  creation_options = NULL,
+  write_json_descr = FALSE,
+  pack = NULL
+)
+
+
+#########bring MODIS Data)##########
+
+
+#Bring landsat data########
 
