@@ -1,0 +1,212 @@
+---
+title: "modis_may-sept_indices"
+output: html_document
+date: "2023-10-06"
+---
+
+```{r setup, include=FALSE}
+# Load the libraries and data
+library(tidyverse)
+
+evi <- read_csv("../data/tabular/l4_evi_reduc.csv")
+lst <- read_csv("../data/tabular/l4_lst_reduc.csv")
+ndwi <- read_csv("../data/tabular/l4_ndwi_reduc.csv")
+
+```
+
+Tidy the data frames for plotting.
+
+```{r}
+
+# Function to rename columns based on suffix
+rename_columns <- function(suffix) {
+  set_names(0:21, 2000:2021) %>%
+    map_chr(~ paste0(., "_", suffix))
+}
+
+# Transformation function
+transform_data <- function(data, suffix, col_value) {
+  data %>%
+    select(c(ends_with(suffix), US_L4CODE)) %>%
+    rename(rename_columns(suffix)) %>%
+    pivot_longer(
+      cols = -US_L4CODE,
+      names_to = "YEAR",
+      values_to = col_value
+    ) %>%
+    mutate(YEAR = as.integer(YEAR),
+           US_L4CODE = as.factor(US_L4CODE))
+}
+
+# Apply transformations
+evi_ <- transform_data(evi, "EVI", "EVI")
+ndwi_ <- transform_data(ndwi, "NDWI", "NDWI")
+lst_ <- transform_data(lst, "LST", "LST")
+
+# Bind them together
+modis_sr_ <- evi_ %>%
+  left_join(ndwi_, by = c("US_L4CODE", "YEAR")) %>%
+  left_join(lst_, by = c("US_L4CODE", "YEAR"))
+
+head(modis_sr_)
+
+rm(evi_,ndwi_,lst_,evi,ndwi,lst) # Clean up ...
+
+```
+
+# Figure 1A: May-Sept EVI, NDWI, and LST across Level IV Ecoregions (2001-2021)
+
+```{r fig.height=6, fig.width=12, message=F}
+
+# Melt the data frame
+(f1a <- modis_sr_ %>%
+ pivot_longer(cols = c(EVI,NDWI,LST),
+              names_to = "INDEX",
+              values_to = "VALUE") %>%
+ ggplot(aes(x=YEAR,y=VALUE,color=US_L4CODE)) +
+ geom_line(size=0.75) +
+ geom_point(aes(x=YEAR,y=VALUE),size=0.8) +
+ facet_wrap(~ INDEX, scales="free_y") +
+ labs(x="Year",y="Index Value",color="L4 Ecoregion") +
+ theme_light(14))
+
+ggsave(f1a, file = "../figures/Figure1_MaySept_Indices_L4Eco_All.png", dpi=300)
+
+```
+
+Clean up!
+
+```{r}
+rm(evi,lst,ndwi,f1a)
+gc()
+```
+
+# Figure 1B: May-Sept EVI, NDWI, and LST across Level IV Ecoregions (2001-2021) with and without Fire
+
+Load the multi-band stack (Fire, No Fire (year of), and No Fire (any)):
+
+```{r include=F}
+evi_stack <- read_csv("../data/tabular/l4_evi_reduc_stack.csv")
+lst_stack <- read_csv("../data/tabular/l4_lst_reduc_stack.csv")
+ndwi_stack <- read_csv("../data/tabular/l4_ndwi_reduc_stack.csv")
+```
+
+```{r}
+# Renaming function
+rename_columns_stack <- function(df) {
+ df <- df %>%
+  select(-c("L1_KEY","L2_KEY","L3_KEY","L4_KEY","NA_L1CODE",
+              "NA_L1NAME","NA_L2CODE","NA_L2NAME","system:index",
+              "NA_L3CODE","NA_L3NAME","Shape_Area","Shape_Leng",
+              "US_L3CODE","US_L3NAME","US_L4NAME","fid",".geo"))
+  years <- 2000:2021
+  # Iterate over years and update column names
+  for(year in years) {
+    prefix <- as.character(year - 2000)  # Convert the year to the prefix (e.g., '0', '1', '2', ...)
+    df <- df %>%
+      rename_with(~str_replace(.x, paste0("^", prefix, "_"), paste0(year, "_")), 
+                  starts_with(prefix))
+  }
+  return(df)
+}
+
+
+# Apply the renaming function
+evi_ <- rename_columns_stack(evi_stack)
+lst_ <- rename_columns_stack(lst_stack)
+ndwi_ <- rename_columns_stack(ndwi_stack)
+
+head(ndwi_)
+
+# # Merge the data frames
+# combined <- bind_rows(evi_, lst_, ndwi_)
+# 
+# # Spread the VARIABLE to wide format
+# modis_sr_f <- combined %>%
+#   spread(key = VARIABLE, value = value)
+# 
+# head(modis_sr_f)
+# 
+# rm(evi_,ndwi_,lst_, combined) # Clean up ...
+
+```
+
+# Figure 2: Breakpoint trends in MODIS indices
+
+```{r}
+
+library(doParallel)
+library(EnvCpt)
+
+
+
+#Helper to estimate breakpoints
+#This script performs breakpoint analysis on time series of LCMAP data aggregated at the EPA ecoregion level iv. Chooses model that minimizes AIC
+#It requires time series of land cover per ecoregion
+#It returns a data frame with years when statistically significant shifts in the time series took place 
+env <- function(data, area, yr, ecoregion, minseglen, mdl){
+  area <- data %>% 
+    dplyr::select(all_of(area))
+  yr <- data %>% 
+    dplyr::select(all_of(yr))
+  ecoregion <- data %>% 
+    dplyr::select(all_of(ecoregion))
+  if(mdl %in% 'best'){
+    fit_envcpt <-  envcpt(area[,1], minseglen = minseglen) #fit all models
+    model <- which.min(AIC(fit_envcpt))#choose the model that minimizes AIC
+    bkp <- fit_envcpt[model+1]
+    df <- data.frame(ecoregion = ecoregion[1,1],
+                     bkp_yr = if(names(model) %in% c('mean', 'trend')) {
+                       NA
+                       }else{
+                         yr[,1][bkp[[1]]@cpts]
+    },
+                     model = names(model))
+  }else{
+    fit_envcpt <-  envcpt(area[,1], minseglen = minseglen, model = mdl)
+    df <- data.frame(ecoregion = ecoregion[1,1],
+                     bkp_yr = yr[,1][eval(parse(text = paste0('fit_envcpt$', mdl)))@cpts],
+                     model = mdl)
+    }
+  return(df)
+}#data = your data frame; area = name of column with area data; yr = name of column with years; ecoregion = name of column with ecoregion names; minseglen = minimum segment length
+#mdl = any model from the envcpt function. choose 'best' if you want to obtain breakpoints from the model that minimizes the AIC
+
+eco_split <- split(df, df$US_L4CODE)#split data frame by ecoregion
+
+registerDoParallel(detectCores()-1)#register cores to run analysis in parallel
+m <- foreach(i = 1:length(eco_split),.combine=rbind)%dopar%{
+  env(eco_split[[i]], area = 'VALUE', yr = 'YEAR', ecoregion = 'US_L4CODE', minseglen = 7, mdl = 'best')
+}#estimate breakpoints with 'best' model
+
+ggplot(m) +
+  geom_point(aes(bkp_yr, factor(ecoregion))) +
+  xlab('Year of change') +
+  ylab('Ecoregion') +
+  ggtitle('Best model') +
+  theme_bw()
+
+mm <- foreach(i = 1:length(eco_split),.combine=rbind)%dopar%{
+  env(eco_split[[i]], area = 'VALUE', yr = 'YEAR', ecoregion = 'US_L4CODE', minseglen = 7, mdl = 'meancpt')
+}#estimate breakpoints with 'meancpt' model
+
+
+ggplot(mm) +
+  geom_point(aes(bkp_yr, factor(ecoregion))) +
+  xlab('Year of change') +
+  ylab('Ecoregion') +
+  ggtitle('Meancpt') +
+  theme_bw()
+
+df2 <- inner_join(df, m, by = c('YEAR' = 'bkp_yr', 'US_L4CODE' = 'ecoregion'))
+  
+ggplot() +
+  geom_line(aes(YEAR, VALUE), data = df) +
+  geom_point(aes(YEAR, VALUE), col = 'red', data = df2) +
+  facet_wrap(.~US_L4CODE, scales = 'free') +
+  theme_bw() +
+  xlab('Year') +
+  ylab(expression('VALUE'))#plot time series & breakpoints of ecoregions with more than 1km2 of tree cover 
+
+```
+
