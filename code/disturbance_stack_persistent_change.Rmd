@@ -1,0 +1,331 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+Extract data for twensday
+
+
+Tyler L. McIntosh
+CU Boulder CIRES Earth Lab
+Last updated: 1/24/24
+
+This script uses the following naming conventions wherever possible:
+ lowerCamelCase for variables
+ period.separated for functions
+ underscore_separated for files
+
+cp -r ~/data-store/data/iplant/home/shared/earthlab/twensday3_transitionwarningsigns /home/jovyan/twensday3_transitionwarningsigns
+
+cp -r /home/jovyan/twensday3_transitionwarningsigns/data/derived ~/data-store/data/iplant/home/shared/earthlab/twensday3_transitionwarningsigns/data/derived
+
+# Setup workspace
+User-set global parameters
+Directory management
+Package management
+
+```{r setup, echo = FALSE, warning = FALSE, message = FALSE}
+
+rm(list=ls()) #Ensure empty workspace if running from beginning
+
+#################################################
+#####EVERYTHING HERE SHOULD BE SET MANUALLY######
+#################################################
+
+computing <- "cyverse" #Sets computing location and file setup; "cyverse" or "local"
+nCores <- 15 #Number of cores available - only necessary if on CyVerse (future package struggles to read automatically on CyVerse, reads 128 (the maximum number of cores)
+
+
+#################################################
+
+# Directory management ----
+
+
+#Set directories
+if(computing == "local") {
+  home <- "C:/Users/tyler/OneDrive - UCB-O365/dev/state-transitions-early-warning"
+} else if(computing == "cyverse") {
+  home <- "./twensday3_transitionwarningsigns"
+}
+
+
+# Package management ----
+
+#source(here::here('code/functions.R'), local = FALSE)
+
+#Check the required libraries and download if needed
+packageList <- c(
+  "tidyverse", #Includes ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats
+  "terra", #New raster data package, documentation pdf here: https://cran.r-project.org/web/packages/terra/terra.pdf
+  "future", "future.apply", "furrr", "doFuture", "progressr", #Futureverse! https://www.futureverse.org/packages-overview.html; https://henrikbengtsson.github.io/course-stanford-futureverse-2023/
+  "parallelly", #some useful functions from 'future' were moved to 'parallelly' because they were helpful outside the future framework
+  "sf", #New vector data package
+  #"mapview", #For quick interactive mapping
+  "tictoc", #time running of processes
+  "glue", #easy strings
+  "tigris", #state polygons
+  "data.table",
+  "vroom",
+  "ggpmisc"  #For adding R^2 to plots
+)
+
+
+# A function to check and install packages provided to the function. Written in part by ChatGPT4.
+# PARAMETERS
+# packageList : a vector of packages used in the script, e.g. c("here", "dplyr")
+# autoInstall : either "y" or "n" (default). "y" will install all required packages without asking the user for permission. "n" will ask permission from the user.
+install.and.load.packages <- function(packageList, autoInstall = "n") {
+  missingCranPackages <- c()
+  missingGithubPackages <- c()
+  for (package in packageList) {
+    packageLoaded <- FALSE
+    # Check if the package is from GitHub
+    if (grepl("/", package)) {
+      packageName <- unlist(strsplit(package, "/"))[2]
+      packageLoaded <- require(packageName, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+    } else {
+      packageLoaded <- require(package, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+    }
+    # Mark as missing if not loaded
+    if (!packageLoaded) {
+      if (grepl("/", package)) {
+        missingGithubPackages <- c(missingGithubPackages, package)
+      } else {
+        missingCranPackages <- c(missingCranPackages, package)
+      }
+    }
+  }
+  # Install missing CRAN packages
+  if (length(missingCranPackages) > 0) {
+    cat("The following CRAN packages are missing: ", paste(missingCranPackages, collapse = ", "), "\n")
+    if(autoInstall == "y") {
+      response <- "y"
+      cat("Installing the missing packages\n")
+    } else {
+      response <- readline(prompt = "\nDo you want to install the missing CRAN packages? (y/n): ")
+    }
+    if (tolower(response) == "y") {
+      install.packages(missingCranPackages)
+      for (package in missingCranPackages) {
+        require(package, character.only = TRUE)
+      }
+    } else {
+      cat("Skipping installation of missing CRAN packages.\n")
+    }
+  }
+  # Ask to install the 'remotes' package if GitHub packages are missing and 'remotes' is not installed
+  if (length(missingGithubPackages) > 0 && !requireNamespace("remotes", quietly = TRUE)) {
+    if(autoInstall == "y") {
+      response <- "y"
+      cat("Installing 'remotes' package to install GitHub packages\n")
+    } else {
+      response <- readline(prompt = "\nDo you want to install the 'remotes' package? (It is required to install packages from GitHub) (y/n): ")
+    }
+    if (tolower(response) == "y") {
+      install.packages("remotes")
+    } else {
+      cat("Skipping installation of GitHub packages.\n")
+      missingGithubPackages <- c() # Clear the list of GitHub packages
+    }
+  }
+  # Install missing GitHub packages
+  if (length(missingGithubPackages) > 0) {
+    cat("The following GitHub packages are missing: ", paste(missingGithubPackages, collapse = ", "), "\n")
+    if(autoInstall == "y") {
+      response <- "y"
+      cat("Installing the missing packages\n")
+    } else {
+      response <- readline(prompt = "\nDo you want to install the missing GitHub packages? (y/n): ")
+    }    
+    if (tolower(response) == "y") {
+      for (package in missingGithubPackages) {
+        remotes::install_github(package)
+        packageName <- unlist(strsplit(package, "/"))[2]
+        require(packageName, character.only = TRUE)
+      }
+    } else {
+      cat("Skipping installation of missing GitHub packages.\n")
+    }
+  }
+  cat("All specified packages installed and loaded.\n")
+}
+
+install.and.load.packages(packageList, autoInstall = "y")
+
+
+
+#Start parallel computing ----
+#Set cores
+# if(computing == "local") {
+#   nCores <- future::availableCores() - 1
+# } else if(computing == "cyverse") {
+#   cat("Using user-defined number of computing cores:", nCores)
+# }
+# future::plan("multisession", workers = nCores)
+
+```
+
+
+# Load data paths
+
+```{r load-data, echo = FALSE}
+
+
+
+#Specific derived data directory for this script's outputs
+outDir <- file.path(home, "data/derived")
+if (!dir.exists(outDir)){
+  dir.create(outDir)
+}
+
+
+#Load data
+
+#Raw data
+dStackF <- list.files(file.path(home, 'data/raw/western-conus'), pattern = "forest-disturbance-stack", full.names = TRUE)
+srConversionsF <- file.path(home, "data/shared/SR_conversion/transformations_data_from_1999_2021.csv")
+
+
+
+dStack <- terra::rast(dStackF)
+
+#Function to create disturbance layer names
+re.name.stack <- function(dStack, dNamesRoot) {
+  dNums <- as.character(seq(1999, 2020))
+  dNames <- paste(dNamesRoot, dNums, sep="_")
+  names(dStack) <- dNames
+  return(dStack)
+}
+
+dStack <- dStack |> re.name.stack("forestDisturbance")
+
+
+```
+
+
+# Prep data and output for later analysis
+```{r}
+
+nms <- names(readr::read_csv(srConversionsF, n_max = 2))
+
+oneCol <- vroom::vroom(srConversionsF, col_select = 1)
+nrows <- nrow(oneCol)
+rm(oneCol)
+gc()
+
+nrows / 500000
+
+
+##FUNCTION TO DO OPERATION
+pull.disturbance.data.at.transitions <- function(skip, nmax, dStack) {
+
+  if(class(dStack)[1] == "PackedSpatRaster") {
+    dStack <- terra::unwrap(dStack)
+  }
+
+  workingSet <- vroom::vroom(srConversionsF, skip = skip, n_max = nmax, col_names = FALSE)|>
+    `names<-`(nms) 
+  
+  points = sf::st_as_sf(workingSet, coords = c("easting", "northing"), crs = 5070) |> sf::st_transform(terra::crs(dStack))
+  #mapview::mapview(points)
+  
+  extracted <- terra::extract(dStack, points)
+
+  rm(dStack)
+  
+
+  fullDats <- cbind(workingSet, extracted) |>
+    dplyr::mutate(transformType = dplyr::case_when(trees_to_grass > 0 & grass_to_trees > 0 & transformed == 0 ~ "shortTransform",
+                                                   trees_to_grass > 12 & grass_to_trees == 0 ~ "transformNeverBackShort",
+                                                   trees_to_grass > 0 & trees_to_grass <= 12 & grass_to_trees == 0 ~ "transformNeverBack10Plus",
+                                                   transformed == 1 ~ "transformBackAfter10Plus",
+                                                   TRUE ~ "noTransform"),
+                  firstYearTransformed = 2000 + trees_to_grass)
+  df <- fullDats
+
+  out <- df %>%
+    mutate(
+      disturbance1YearPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 1)
+        if (year_col_name %in% names(df)) {
+          return(df[i, year_col_name])
+        } else {
+          return(NA)  # In case the year_col_name does not exist
+        }
+      }),
+      disturbance2YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 2)
+        if (year_col_name %in% names(df)) {
+          return(df[i, year_col_name])
+        } else {
+          return(NA)
+        }
+      }),
+      disturbance3YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 3)
+        if (year_col_name %in% names(df)) {
+          return(df[i, year_col_name])
+        } else {
+          return(NA)
+        }
+      }),
+      disturbance4YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 4)
+        if (year_col_name %in% names(df)) {
+          return(df[i, year_col_name])
+        } else {
+          return(NA)
+        }
+      }),
+      disturbance5YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 5)
+        if (year_col_name %in% names(df)) {
+          return(df[i, year_col_name])
+        } else {
+          return(NA)
+        }
+      })
+    )
+    
+  vroom::vroom_write(x = out, file = file.path(outDir, paste0("transform_with_disturbance_", skip, ".csv")), delim = ",")
+}
+
+
+tic()
+pull.disturbance.data.at.transitions(skip = 1, nmax = 500000, dStack = dStack)
+toc()
+
+
+tic()
+chunkSize = 1000000
+nChunks <- nrows %/% chunkSize + 1
+skips <- seq(from = 1, by = chunkSize, length.out = nChunks)
+
+future::plan("multisession", workers = nCores)
+options(future.globals.onReference = "error")
+
+wrappedDStack <- terra::wrap(dStack)
+skips |> furrr::future_map(.f = ~pull.disturbance.data.at.transitions(skip = .x, nmax = chunkSize, dStack = wrappedDStack))
+toc()
+
+
+
+```
+
+
+# Analyze outputs
+
+```{r}
+
+outFs <- list.files(outDir, full.names = TRUE)
+
+allDats <- vroom::vroom(outFs)
+
+view <- allDats[1:500,]
+
+noNAs <- allDats |> na.omit()
+
+
+allDatsNoNas <- outFs[1:2] |> furrr::future_map(~ vroom::vroom(.x) |> na.omit())
+
