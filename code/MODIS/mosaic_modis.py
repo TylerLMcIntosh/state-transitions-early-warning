@@ -4,8 +4,8 @@ import glob
 import time
 import geopandas as gpd
 import rioxarray as rxr
+import xarray as xr
 from rioxarray.merge import merge_arrays
-import rasterio
 import rasterio.crs
 
 begin = time.time()
@@ -17,7 +17,9 @@ proj = 'EPSG:5070'
 srme = gpd.read_file(os.path.join(os.getcwd(),'data/spatial/raw/us_eco_l3_srme.gpkg')).to_crs(proj)
 
 
-# Grab a list of tif files for the MODIS indices
+#############
+# Functions #
+#############
 
 def list_files(path, ext):
     return glob.glob(os.path.join(path, '**', '*{}'.format(ext)), recursive=True)
@@ -27,12 +29,18 @@ def mosaic_tifs(tif_list, output_filename, clip):
     tiles = []
     for tif in tif_list:
         # print(os.path.basename(tif))
-        tile = rxr.open_rasterio(tif, masked=True).squeeze()
-        nodata = tile.rio.nodata
-        # Set nodata values if not already set
-        if tile.rio.nodata is None:
-            tile.rio.write_nodata(-9999, inplace=True)
+        tile = rxr.open_rasterio(tif, masked=True, cache=False).squeeze()
         tile = tile.rio.reproject(proj)
+        nodata = tile.rio.nodata
+
+        # Set nodata values if not already set
+        if nodata is None:
+            print("Writing NoData")
+            tile.rio.write_nodata(-9999.0, inplace=True)
+        else:
+            nodata = nodata
+            # print(nodata)
+
         tiles.append(tile)
 
         del tif, tile
@@ -40,25 +48,22 @@ def mosaic_tifs(tif_list, output_filename, clip):
     # Merge the rasters
     print("Merging arrays.")
 
-    out_mosaic = merge_arrays(
-        dataarrays=tiles,
-        res=(500, 500),
-        nodata=nodata,
-        crs=rasterio.crs.CRS.from_string(proj)
-    )
+    stack = xr.concat(tiles, dim='band')
+    out_mosaic = stack.mean(dim='band', skipna=True)
+    out_mosaic = out_mosaic.to_dataset(name=ind).to_array()
 
     # Clip to the SRME
     print("Clipping ...")
-    out_mosaic = out_mosaic.rio.clip(clip.geometry)
+    clipped = out_mosaic.rio.clip(clip.geometry)
 
-    out_mosaic.rio.to_raster(
+    clipped.rio.to_raster(
         output_filename, compress='zstd', zstd_level=9, driver='GTiff')
 
-    del out_mosaic, tiles
+    del out_mosaic, tiles, clipped, stack
 
 
 # Get a list of the TIFF files
-tifs = list_files(maindir,'.tif')
+tifs = list_files(os.path.join(maindir,'tiles'),'.tif')
 print(len(tifs))
 
 # Loop through indices and blocks, create a mosaic
@@ -92,7 +97,7 @@ for ind in indices:
 
         else:
 
-            out_path = os.path.join(maindir,f'{ind}/mosaic/')
+            out_path = os.path.join(maindir,f'mosaics/{ind}')
             if not os.path.exists(out_path):
                 os.makedirs(out_path)
 
