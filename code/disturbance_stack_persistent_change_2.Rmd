@@ -216,6 +216,13 @@ gc()
 
 nrows / 500000
 
+fireCodes <- c(1,5,9,13)
+insectCodes <- c(2,6,10,14)
+otherCodes <- c(3,7,11,15)
+hotterDOnlyCodes4Plus <- c(4,8,12)
+comboCodes <- c(5,6,7,9,10,11,13,14,15)
+anyHotterDCodes <- seq(4,15)
+
 
 ##FUNCTION TO DO OPERATION
 pull.disturbance.data.at.transitions <- function(skip, nmax, dStack) {
@@ -249,52 +256,102 @@ pull.disturbance.data.at.transitions <- function(skip, nmax, dStack) {
       disturbance1YearPrior = sapply(1:n(), function(i) {
         year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 1)
         if (year_col_name %in% names(df)) {
-          return(df[i, year_col_name])
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
         } else {
-          return(NA)  # In case the year_col_name does not exist
+          return(NA_integer_)  # In case the year_col_name does not exist
         }
       }),
       disturbance2YearsPrior = sapply(1:n(), function(i) {
         year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 2)
         if (year_col_name %in% names(df)) {
-          return(df[i, year_col_name])
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
         } else {
-          return(NA)
+          return(NA_integer_)
         }
       }),
       disturbance3YearsPrior = sapply(1:n(), function(i) {
         year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 3)
         if (year_col_name %in% names(df)) {
-          return(df[i, year_col_name])
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
         } else {
-          return(NA)
+          return(NA_integer_)
         }
       }),
       disturbance4YearsPrior = sapply(1:n(), function(i) {
         year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 4)
         if (year_col_name %in% names(df)) {
-          return(df[i, year_col_name])
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
         } else {
-          return(NA)
+          return(NA_integer_)
         }
       }),
       disturbance5YearsPrior = sapply(1:n(), function(i) {
         year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 5)
         if (year_col_name %in% names(df)) {
-          return(df[i, year_col_name])
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
         } else {
-          return(NA)
+          return(NA_integer_)
         }
-      })
+      }),
+      transformedTooEarly = if_else(trees_to_grass > 0 & trees_to_grass < 4, TRUE, FALSE),
+      doNotProcess = if_else(transformedTooEarly | transformType == "noTransform", TRUE, FALSE),
+      yearPriorIncident = dplyr::case_when(is.na(disturbance1YearPrior) ~ NA,
+                                           disturbance1YearPrior %in% fireCodes ~ "fire",
+                                           disturbance1YearPrior %in% insectCodes ~ "insect",
+                                           disturbance1YearPrior %in% otherCodes ~ "other",
+                                           disturbance1YearPrior %in% hotterDOnlyCodes4Plus ~ "hotterDrought",
+                                           disturbance1YearPrior %in% c(0) ~ "none"),
+      
+      
+      anyHotDInYearsPrior = case_when(doNotProcess ~ NA,
+                                      TRUE ~ pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% anyHotterDCodes))),
+      onlyHotDInYearsPrior = case_when(doNotProcess ~ NA,
+                                      TRUE ~ pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% hotterDOnlyCodes4Plus))),
+      anyFireInYearsPrior = case_when(doNotProcess ~ NA,
+                                      TRUE ~ pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% fireCodes))),
+      anyInsectInYearsPrior = case_when(doNotProcess ~ NA,
+                                      TRUE ~ pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% insectCodes))),
+      combosInYearsPrior = case_when(doNotProcess ~ NA,
+                                      TRUE ~ pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% comboCodes)))
+
+      
+      
+    #   anyHotDInYearsPrior = if_else(doNotProcess, NA_integer_, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% anyHotterDCodes))),
+    #   onlyHotDInYearsPrior = if_else(doNotProcess, NA_integer_, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% hotterDOnlyCodes4Plus))),
+    #   anyFireInYearsPrior = if_else(doNotProcess, NA_integer_, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% fireCodes))),
+    #   anyInsectInYearsPrior = if_else(doNotProcess, NA_integer_, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% insectCodes))),
+    #    combosInYearsPrior = if_else(doNotProcess, NA_integer_, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% comboCodes)))#, NOTE: THESE MUTATE COMMANDS REMOVED SINCE THEY ARE OPERATING ROWWISE AND ARE INEFFICIENT. A VECTORIZED OPERATIONS ALTERNATIVE IS USED INSTEAD BETWEEN HERE AND THE END OF THE FUNCTION
+    #   # totalHotDInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% anyHotterDCodes)),
+    #   # totalOnlyHotDInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% hotterDOnlyCodes4Plus)),
+    #   # totalFireInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% fireCodes)),
+    #   # totalInsectInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% insectCodes)),
+    #   # totalCombosInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% comboCodes))
+    
     )
+
+selected_columns <- df %>%
+  select(starts_with("forestDisturbance_"))
+
+# Calculate the totals by vectorized operations
+out$totalHotDInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% anyHotterDCodes), na.rm = TRUE)
+out$totalOnlyHotDInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% hotterDOnlyCodes4Plus), na.rm = TRUE)
+out$totalFireInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% fireCodes), na.rm = TRUE)
+out$totalInsectInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% insectCodes), na.rm = TRUE)
+out$totalCombosInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% comboCodes), na.rm = TRUE)
+
     
   vroom::vroom_write(x = out, file = file.path(outDir, paste0("transform_with_disturbance_", skip, ".csv")), delim = ",")
 }
 
 
-tic()
-pull.disturbance.data.at.transitions(skip = 1, nmax = 500000, dStack = dStack)
-toc()
+# tic()
+# pull.disturbance.data.at.transitions(skip = 1, nmax = 500000, dStack = dStack)
+# toc()
 
 
 tic()
@@ -306,9 +363,12 @@ future::plan("multisession", workers = nCores)
 options(future.globals.onReference = "error")
 
 wrappedDStack <- terra::wrap(dStack)
-skips |> furrr::future_map(.f = ~pull.disturbance.data.at.transitions(skip = .x, nmax = chunkSize, dStack = wrappedDStack))
+skips[1:2] |> furrr::future_map(.f = ~pull.disturbance.data.at.transitions(skip = .x, nmax = chunkSize, dStack = wrappedDStack))
 toc()
 
+
+
+pull.disturbance.data.at.transitions(skip = skips[1], nmax = chunkSize, dStack = wrappedDStack)
 
 
 ```
@@ -317,7 +377,6 @@ toc()
 # Analyze outputs
 
 ```{r}
-
 
 outFs <- list.files(outDir, full.names = TRUE)
 ttt <- vroom(outFs[1])
@@ -408,3 +467,85 @@ ggplot2::ggplot() +
 
 
 
+
+tic()
+df <- tSet
+df <- df[1:50000,]
+df <- df %>%
+    mutate(
+      disturbance1YearPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 1)
+        if (year_col_name %in% names(df)) {
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
+        } else {
+          return(NA_integer_)  # In case the year_col_name does not exist
+        }
+      }),
+      disturbance2YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 2)
+        if (year_col_name %in% names(df)) {
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
+        } else {
+          return(NA_integer_)
+        }
+      }),
+      disturbance3YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 3)
+        if (year_col_name %in% names(df)) {
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
+        } else {
+          return(NA_integer_)
+        }
+      }),
+      disturbance4YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 4)
+        if (year_col_name %in% names(df)) {
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
+        } else {
+          return(NA_integer_)
+        }
+      }),
+      disturbance5YearsPrior = sapply(1:n(), function(i) {
+        year_col_name <- paste0("forestDisturbance_", df$firstYearTransformed[i] - 5)
+        if (year_col_name %in% names(df)) {
+          value <- as.integer(df[[year_col_name]][i])
+          return(value)
+        } else {
+          return(NA_integer_)
+        }
+      }),
+      transformedTooEarly = if_else(trees_to_grass > 0 & trees_to_grass < 4, TRUE, FALSE),
+      doNotProcess = if_else(transformedTooEarly | transformType == "noTransform", TRUE, FALSE),
+      yearPriorIncident = dplyr::case_when(is.na(disturbance1YearPrior) ~ NA,
+                                           disturbance1YearPrior %in% fireCodes ~ "fire",
+                                           disturbance1YearPrior %in% insectCodes ~ "insect",
+                                           disturbance1YearPrior %in% otherCodes ~ "other",
+                                           disturbance1YearPrior %in% hotterDOnlyCodes4Plus ~ "hotterDrought",
+                                           disturbance1YearPrior %in% c(0) ~ "none"),
+      anyHotDInYearsPrior = if_else(doNotProcess, NA, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% anyHotterDCodes))),
+      onlyHotDInYearsPrior = if_else(doNotProcess, NA, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% hotterDOnlyCodes4Plus))),
+      anyFireInYearsPrior = if_else(doNotProcess, NA, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% fireCodes))),
+      anyInsectInYearsPrior = if_else(doNotProcess, NA, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% insectCodes))),
+      combosInYearsPrior = if_else(doNotProcess, NA, pmap_int(select(., disturbance1YearPrior:disturbance5YearsPrior), ~ sum(c(...) %in% comboCodes)))#,
+      # totalHotDInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% anyHotterDCodes)),
+      # totalOnlyHotDInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% hotterDOnlyCodes4Plus)),
+      # totalFireInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% fireCodes)),
+      # totalInsectInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% insectCodes)),
+      # totalCombosInAllYears = pmap_int(select(., forestDisturbance_1999:forestDisturbance_2020), ~ sum(c(...) %in% comboCodes))
+    )
+
+selected_columns <- df %>%
+  select(starts_with("forestDisturbance_"))
+
+# Calculate the totals by vectorized operations
+df$totalHotDInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% anyHotterDCodes), na.rm = TRUE)
+df$totalOnlyHotDInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% hotterDOnlyCodes4Plus), na.rm = TRUE)
+df$totalFireInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% fireCodes), na.rm = TRUE)
+df$totalInsectInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% insectCodes), na.rm = TRUE)
+df$totalCombosInAllYears <- rowSums(sapply(selected_columns, function(x) x %in% comboCodes), na.rm = TRUE)
+
+toc()
